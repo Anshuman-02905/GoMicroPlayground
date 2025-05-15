@@ -1,0 +1,150 @@
+package event
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+)
+
+type Consumer struct {
+	conn      *amqp.Connection
+	queueName string
+}
+
+func NewConsumer(conn *amqp.Connection) (Consumer, error) {
+	consumer := Consumer{
+		conn: conn,
+	}
+	err := consumer.setup()
+	if err != nil {
+		log.Println("Error at Setup of New Consumer in broker Consumer")
+
+		return Consumer{}, err
+	}
+	return consumer, nil
+}
+
+func (consumer *Consumer) setup() error {
+	channel, err := consumer.conn.Channel()
+	if err != nil {
+		log.Println("Error at Setup of  Consumer in broker Consumer")
+
+		return err
+	}
+
+	return declareExchange(channel)
+}
+
+type Payload struct {
+	Name string `json:"name"`
+	Data string `json:"data"`
+}
+
+func (consumer *Consumer) Listen(topics []string) error {
+	ch, err := consumer.conn.Channel()
+	if err != nil {
+		log.Println("Error at Listen of  Consumer in broker Consumer")
+
+		return err
+	}
+	defer ch.Close()
+
+	q, err := declareRandomQueue(ch)
+
+	if err != nil {
+		log.Println("Error at Listen of  Consumer  adfter Random Queyein broker Consumer")
+
+		return err
+	}
+
+	for _, s := range topics {
+		ch.QueueBind(
+			q.Name,
+			s,
+			"logs_topic",
+			false,
+			nil,
+		)
+		if err != nil {
+			log.Println("Error at Queue Bind of  Consumer  adfter Random Queyein broker Consumer")
+
+			return err
+		}
+	}
+
+	messages, err := ch.Consume(q.Name, "", true, false, false, false, nil)
+
+	if err != nil {
+		log.Println("Error at  Consume of  Consumer  adfter Random Queyein broker Consumer")
+
+		return err
+	}
+
+	forever := make(chan bool)
+	go func() {
+		for d := range messages {
+			var payload Payload
+			_ = json.Unmarshal(d.Body, &payload)
+			go handlePayload(payload)
+
+		}
+	}()
+
+	fmt.Printf("Waiting for message [EXCHANGE, QUEUE] [logs_topic, %s]", q.Name)
+
+	<-forever
+	return nil
+
+}
+
+func handlePayload(payload Payload) {
+	switch payload.Name {
+	case "log", "event":
+		//log whatever we get
+		err := logEvent(payload)
+		if err != nil {
+			log.Println(err)
+		}
+	case "auth":
+		//authenticate
+
+	// you have as many cases as you want, as long as you write the logic
+	default:
+		err := logEvent(payload)
+		if err != nil {
+			log.Println("Error at  handleLog Event in handle Payload Queyein broker Consumer")
+
+			log.Println(err)
+		}
+	}
+}
+
+func logEvent(entry Payload) error {
+	// create some json we will sent to the logger-service
+	jsonData, _ := json.MarshalIndent(entry, "", "\t")
+	// call the service
+	logServiceUrl := "http://logger-service/log"
+	// request, err := http.NewRequest("POST", "http://logger-service/", bytes.NewBuffer(jsonData))
+	request, err := http.NewRequest("POST", logServiceUrl, bytes.NewBuffer(jsonData))
+
+	if err != nil {
+		return err
+	}
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	// make sure we get the correct status
+	if response.StatusCode != http.StatusAccepted {
+		return err
+	}
+
+	return nil
+}

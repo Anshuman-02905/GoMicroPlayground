@@ -1,0 +1,11 @@
+#{id => {rabbitmq_metadata,rabbit@6855b81e9b3e},
+  machine =>
+      {module,khepri_machine,
+              #{member => {rabbitmq_metadata,rabbit@6855b81e9b3e},
+                store_id => rabbitmq_metadata}},
+  friendly_name => "RabbitMQ metadata store",
+  cluster_name => rabbitmq_metadata,uid => <<"RABBIT1Q2R2BU30PII">>,
+  initial_members => [],
+  log_init_args => #{uid => <<"RABBIT1Q2R2BU30PII">>},
+  tick_timeout => 1000,broadcast_time => 100,
+  install_snap_rpc_timeout => 120000,await_condition_timeout => 30000}.
